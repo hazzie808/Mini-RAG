@@ -1,35 +1,52 @@
 import requests
 import numpy as np
+import json
 
+# =========================
+# 1. 读取已经构建好的索引
+# =========================
+
+index_file = "knowledge_index.json"
+
+with open(index_file, "r", encoding="utf-8") as f:
+    index = json.load(f)
+
+
+print(f"知识库 Chunk 数量：{len(index)}")
 
 # Ollama Embedding API
-url = "http://localhost:11434/api/embeddings"
+embedding_url = "http://localhost:11434/api/embeddings"
 
 
 # 读取知识库
-file_path = r"D:\AIProjects\Mini-RAG\data\knowledge.txt"
+# file_path = r"D:\AIProjects\Mini-RAG\data\knowledge.txt"
 
-with open(file_path, "r", encoding="utf-8") as f:
-    content = f.read()
+# with open(file_path, "r", encoding="utf-8") as f:
+#     content = f.read()
 
 
 # 文本切分
-chunk_size = 100
-overlap = 20
+# chunk_size = 150
+# overlap = 30
 
-chunks = []
+# chunks = []
 
-start = 0
+# start = 0
 
-while start < len(content):
-    end = start + chunk_size
+# while start < len(content):
+#     end = start + chunk_size
 
-    chunk = content[start:end]
+#     chunk = content[start:end]
 
-    if chunk.strip() != "":
-        chunks.append(chunk)
+#     if chunk.strip() != "":
+#         chunks.append(chunk)
 
-    start = end - overlap
+#     start = end - overlap
+# 文本切分：按照自然段切分
+# chunks = content.split("\n\n")
+
+# # 去掉空白 Chunk
+# chunks = [chunk.strip() for chunk in chunks if chunk.strip()]
 
 
 # 获取 Embedding
@@ -39,7 +56,7 @@ def get_embedding(text):
         "prompt": text
     }
 
-    response = requests.post(url, json=payload)
+    response = requests.post(embedding_url, json=payload)
 
     result = response.json()
 
@@ -73,9 +90,12 @@ results = []
 
 
 # 依次计算 Query 和每个 Chunk 的相似度
-for chunk in chunks:
+for item in index:
+    chunk_id = item["chunk_id"]
+    source = item["source"]
+    text = item["text"]
 
-    chunk_embedding = get_embedding(chunk)
+    chunk_embedding = item["embedding"]
 
     chunk_vector = np.array(chunk_embedding)
 
@@ -84,12 +104,12 @@ for chunk in chunks:
         chunk_vector
     )
 
-    results.append((chunk, similarity))
+    results.append((chunk_id, source, text, similarity))
 
 
 # 按照相似度从高到低排序
 results.sort(
-    key=lambda item: item[1],
+    key=lambda item: item[3],
     reverse=True
 )
 
@@ -98,11 +118,13 @@ top_results = results[:top_k]
 # 输出检索结果
 print("\n===== 检索结果 =====")
 
-for i, (chunk, similarity) in enumerate(top_results):
+for i, (chunk_id, source,text, similarity) in enumerate(top_results):
 
     print(f"\nTop {i + 1}:")
-    print(f"相似度：{similarity:.4f}")
-    print(f"文本：{chunk}")
+    print(f"相似度: {similarity:.4f}")
+    print(f"来源: {source}")
+    print(f"Chunk ID: {chunk_id}")
+    print(f"文本: {text}")
 
 # =========================
 # 10. 整理 Top-K Context
@@ -110,8 +132,8 @@ for i, (chunk, similarity) in enumerate(top_results):
 
 context = ""
 
-for chunk, similarity in top_results:
-    context += chunk + "\n\n"
+for chunk_id, source, text, similarity in top_results:
+    context += f"来源:{source}|Chunk ID:{chunk_id}\n\n" + text + "\n\n"
 
 
 # =========================
@@ -141,7 +163,7 @@ print(prompt)
 # 12. 调用 DeepSeek-R1
 # =========================
 
-url = "http://localhost:11434/api/chat"
+chat_url = "http://localhost:11434/api/chat"
 
 payload = {
     "model": "deepseek-r1:latest",
@@ -154,7 +176,7 @@ payload = {
     "stream": False
 }
 
-response = requests.post(url, json=payload)
+response = requests.post(chat_url, json=payload)
 
 assistant_reply = response.json()["message"]["content"]
 
